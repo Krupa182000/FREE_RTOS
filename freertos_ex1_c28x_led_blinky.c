@@ -24,30 +24,36 @@
 #include "device.h"     // Device Headerfile and Examples Include File
 #include "FreeRTOS.h"
 #include "task.h"
-#include "semphr.h"
+//#include "semphr.h"
+#include "timers.h"
 
+static uint32_t callbackCount = 0;
 #define STACK_SIZE  256U
-#define RED         0xDEADBEAF
-#define BLUE        0xBAADF00D
+//#define RED         0xDEADBEAF
+//#define BLUE        0xBAADF00D
 
-static StaticTask_t redTaskBuffer;
-static StackType_t  redTaskStack[STACK_SIZE];
-#pragma DATA_SECTION(redTaskStack,   ".freertosStaticStack")
-#pragma DATA_ALIGN ( redTaskStack , portBYTE_ALIGNMENT )
-
-static StaticTask_t blueTaskBuffer;
-static StackType_t  blueTaskStack[STACK_SIZE];
-#pragma DATA_SECTION(blueTaskStack,   ".freertosStaticStack")
-#pragma DATA_ALIGN ( blueTaskStack , portBYTE_ALIGNMENT )
+//static StaticTask_t redTaskBuffer;
+//static StackType_t  redTaskStack[STACK_SIZE];
+//#pragma DATA_SECTION(redTaskStack,   ".freertosStaticStack")
+//#pragma DATA_ALIGN ( redTaskStack , portBYTE_ALIGNMENT )
+//
+//static StaticTask_t blueTaskBuffer;
+//static StackType_t  blueTaskStack[STACK_SIZE];
+//#pragma DATA_SECTION(blueTaskStack,   ".freertosStaticStack")
+//#pragma DATA_ALIGN ( blueTaskStack , portBYTE_ALIGNMENT )
 
 static StaticTask_t idleTaskBuffer;
 static StackType_t  idleTaskStack[STACK_SIZE];
 #pragma DATA_SECTION(idleTaskStack,   ".freertosStaticStack")
 #pragma DATA_ALIGN ( idleTaskStack , portBYTE_ALIGNMENT )
 
-static SemaphoreHandle_t xSemaphore = NULL;
-static StaticSemaphore_t xSemaphoreBuffer;
+//static SemaphoreHandle_t xSemaphore = NULL;
+//static StaticSemaphore_t xSemaphoreBuffer;
+static StaticTimer_t xTimerBuffer;
+static TimerHandle_t xTimer;
 
+static StaticTask_t xTimerTaskTCB;
+static StackType_t xTimerTaskStack[configTIMER_TASK_STACK_DEPTH];
 //-------------------------------------------------------------------------------------------------
 void vApplicationStackOverflowHook( TaskHandle_t xTask, char *pcTaskName )
 {
@@ -55,44 +61,50 @@ void vApplicationStackOverflowHook( TaskHandle_t xTask, char *pcTaskName )
 }
 
 //-------------------------------------------------------------------------------------------------
-static void blueLedToggle(void)
-{
-    static uint32_t counter = 0;
-
-    counter++;
-    GPIO_writePin(DEVICE_GPIO_PIN_LED1, counter & 1);
-}
-
-//-------------------------------------------------------------------------------------------------
-static void redLedToggle(void)
-{
-    static uint32_t counter = 0;
-
-    counter++;
-    GPIO_writePin(DEVICE_GPIO_PIN_LED2, counter & 1);
-}
-
-//-------------------------------------------------------------------------------------------------
-static void ledToggle(uint32_t led)
-{
-    if(RED == led)
-    {
-        redLedToggle();
-    }
-    else
-    if(BLUE == led)
-    {
-        blueLedToggle();
-    } 
-}
+//static void blueLedToggle(void)
+//{
+//    static uint32_t counter = 0;
+//
+//    counter++;
+//    GPIO_writePin(DEVICE_GPIO_PIN_LED1, counter & 1);
+//}
+//
+////-------------------------------------------------------------------------------------------------
+//static void redLedToggle(void)
+//{
+//    static uint32_t counter = 0;
+//
+//    counter++;
+//    GPIO_writePin(DEVICE_GPIO_PIN_LED2, counter & 1);
+//}
+//
+////-------------------------------------------------------------------------------------------------
+//static void ledToggle(uint32_t led)
+//{
+//    if(RED == led)
+//    {
+//        redLedToggle();
+//    }
+//    else
+//    if(BLUE == led)
+//    {
+//        blueLedToggle();
+//    }
+//}
 //
 // configCPUTimer - This function initializes the selected timer to the
 // period specified by the "freq" and "period" variables. The "freq" is
 // CPU frequency in Hz and the period in uSeconds. The timer is held in
 // the stopped state after configuration.
 //
-void
-configCPUTimer(uint32_t cpuTimer, uint32_t period)
+void vTimerCallback(TimerHandle_t xTimer)
+{
+    callbackCount++;
+    GPIO_togglePin(DEVICE_GPIO_PIN_LED1);
+}
+
+
+void configCPUTimer(uint32_t cpuTimer, uint32_t period)
 {
     uint32_t temp, freq = DEVICE_SYSCLK_FREQ;
 
@@ -121,19 +133,19 @@ configCPUTimer(uint32_t cpuTimer, uint32_t period)
 }
 
 //-------------------------------------------------------------------------------------------------
-interrupt void timer1_ISR( void )
-{
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-    xSemaphoreGiveFromISR( xSemaphore, &xHigherPriorityTaskWoken );
-
-    portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
-}
+//interrupt void timer1_ISR( void )
+//{
+//    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//
+//    xSemaphoreGiveFromISR( xSemaphore, &xHigherPriorityTaskWoken );
+//
+//    portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+//}
 
 //-------------------------------------------------------------------------------------------------
 static void setupTimer1( void )
 {
-    Interrupt_register(INT_TIMER1, &timer1_ISR);
+    //Interrupt_register(INT_TIMER1, &timer1_ISR);
 
     CPUTimer_setPeriod(CPUTIMER1_BASE, 0xFFFFFFFF);
     CPUTimer_setPreScaler(CPUTIMER1_BASE, 0);
@@ -149,26 +161,26 @@ static void setupTimer1( void )
 }
 
 //-------------------------------------------------------------------------------------------------
-void LED_TaskRed(void * pvParameters)
-{
-    for(;;)
-    {
-        if(xSemaphoreTake( xSemaphore, portMAX_DELAY ) == pdTRUE)
-        {
-            ledToggle((uint32_t)pvParameters);
-        }
-    }
-}
-
-//-------------------------------------------------------------------------------------------------
-void LED_TaskBlue(void * pvParameters)
-{
-    for(;;)
-    {
-        ledToggle((uint32_t)pvParameters);
-        vTaskDelay(250 / portTICK_PERIOD_MS);
-    }
-}
+//void LED_TaskRed(void * pvParameters)
+//{
+//    for(;;)
+//    {
+//        if(xSemaphoreTake( xSemaphore, portMAX_DELAY ) == pdTRUE)
+//        {
+//            ledToggle((uint32_t)pvParameters);
+//        }
+//    }
+//}
+//
+////-------------------------------------------------------------------------------------------------
+//void LED_TaskBlue(void * pvParameters)
+//{
+//    for(;;)
+//    {
+//        ledToggle((uint32_t)pvParameters);
+//        vTaskDelay(250 / portTICK_PERIOD_MS);
+//    }
+//}
 
 //-------------------------------------------------------------------------------------------------
 void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize )
@@ -178,9 +190,20 @@ void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackTy
     *pulIdleTaskStackSize = STACK_SIZE;
 }
 
+void vApplicationGetTimerTaskMemory(
+    StaticTask_t **ppxTimerTaskTCBBuffer,
+    StackType_t **ppxTimerTaskStackBuffer,
+    uint32_t *pulTimerTaskStackSize)
+{
+    *ppxTimerTaskTCBBuffer = &xTimerTaskTCB;
+    *ppxTimerTaskStackBuffer = xTimerTaskStack;
+    *pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
+}
+
 //-------------------------------------------------------------------------------------------------
 void main(void)
 {
+    TimerHandle_t xTimer;
     //
     // Initializes device clock and peripherals
     //
@@ -215,30 +238,41 @@ void main(void)
     //
     Interrupt_initVectorTable();
 
-    xSemaphore = xSemaphoreCreateBinaryStatic( &xSemaphoreBuffer );
 
-    setupTimer1();
+//    xSemaphore = xSemaphoreCreateBinaryStatic( &xSemaphoreBuffer );
+
+//    setupTimer1();
 
     // Enable global Interrupts and higher priority real-time debug events:
     EINT;  // Enable Global interrupt INTM
     ERTM;  // Enable Global realtime interrupt DBGM
 
     // Create the task without using any dynamic memory allocation.
-    xTaskCreateStatic(LED_TaskRed,          // Function that implements the task.
-                      "Red LED task",       // Text name for the task.
-                      STACK_SIZE,           // Number of indexes in the xStack array.
-                      ( void * ) RED,       // Parameter passed into the task.
-                      tskIDLE_PRIORITY + 2, // Priority at which the task is created.
-                      redTaskStack,         // Array to use as the task's stack.
-                      &redTaskBuffer );     // Variable to hold the task's data structure.
+//    xTaskCreateStatic(LED_TaskRed,          // Function that implements the task.
+//                      "Red LED task",       // Text name for the task.
+//                      STACK_SIZE,           // Number of indexes in the xStack array.
+//                      ( void * ) RED,       // Parameter passed into the task.
+//                      tskIDLE_PRIORITY + 2, // Priority at which the task is created.
+//                      redTaskStack,         // Array to use as the task's stack.
+//                      &redTaskBuffer );     // Variable to hold the task's data structure.
+//
+//    xTaskCreateStatic(LED_TaskBlue,         // Function that implements the task.
+//                      "Blue LED task",      // Text name for the task.
+//                      STACK_SIZE,           // Number of indexes in the xStack array.
+//                      ( void * ) BLUE,      // Parameter passed into the task.
+//                      tskIDLE_PRIORITY + 1, // Priority at which the task is created.
+//                      blueTaskStack,        // Array to use as the task's stack.
+//                      &blueTaskBuffer );    // Variable to hold the task's data structure.
+    xTimer = xTimerCreateStatic(
+        "LED_Timer",
+        pdMS_TO_TICKS(1000),
+        pdFALSE,
+        NULL,
+        vTimerCallback,
+        &xTimerBuffer
+    );
 
-    xTaskCreateStatic(LED_TaskBlue,         // Function that implements the task.
-                      "Blue LED task",      // Text name for the task.
-                      STACK_SIZE,           // Number of indexes in the xStack array.
-                      ( void * ) BLUE,      // Parameter passed into the task.
-                      tskIDLE_PRIORITY + 1, // Priority at which the task is created.
-                      blueTaskStack,        // Array to use as the task's stack.
-                      &blueTaskBuffer );    // Variable to hold the task's data structure.
+    xTimerStart(xTimer, 0);
 
     vTaskStartScheduler();
 }
