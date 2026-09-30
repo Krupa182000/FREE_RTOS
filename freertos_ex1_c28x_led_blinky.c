@@ -24,75 +24,102 @@
 #include "device.h"     // Device Headerfile and Examples Include File
 #include "FreeRTOS.h"
 #include "task.h"
-#include "semphr.h"
+//#include "semphr.h"
+#include "event_groups.h"
 
 #define STACK_SIZE  256U
-#define RED         0xDEADBEAF
-#define BLUE        0xBAADF00D
+//#define RED         0xDEADBEAF
+//#define BLUE        0xBAADF00D
 
-static StaticTask_t redTaskBuffer;
-static StackType_t  redTaskStack[STACK_SIZE];
-#pragma DATA_SECTION(redTaskStack,   ".freertosStaticStack")
-#pragma DATA_ALIGN ( redTaskStack , portBYTE_ALIGNMENT )
+#define ADC_READY_BIT   (1U << 0)
+#define UART_READY_BIT  (1U << 1)
+static StaticTask_t adcTaskBuffer;
+static StackType_t adcTaskStack[STACK_SIZE];
 
-static StaticTask_t blueTaskBuffer;
-static StackType_t  blueTaskStack[STACK_SIZE];
-#pragma DATA_SECTION(blueTaskStack,   ".freertosStaticStack")
-#pragma DATA_ALIGN ( blueTaskStack , portBYTE_ALIGNMENT )
+#pragma DATA_SECTION(adcTaskStack, ".freertosStaticStack")
+#pragma DATA_ALIGN(adcTaskStack, portBYTE_ALIGNMENT)
+
+static StaticTask_t uartTaskBuffer;
+static StackType_t uartTaskStack[STACK_SIZE];
+
+#pragma DATA_SECTION(uartTaskStack, ".freertosStaticStack")
+#pragma DATA_ALIGN(uartTaskStack, portBYTE_ALIGNMENT)
+
+static StaticTask_t systemTaskBuffer;
+static StackType_t systemTaskStack[STACK_SIZE];
+
+#pragma DATA_SECTION(systemTaskStack, ".freertosStaticStack")
+#pragma DATA_ALIGN(systemTaskStack, portBYTE_ALIGNMENT)
+
+//static StaticTask_t redTaskBuffer;
+//static StackType_t  redTaskStack[STACK_SIZE];
+//#pragma DATA_SECTION(redTaskStack,   ".freertosStaticStack")
+//#pragma DATA_ALIGN ( redTaskStack , portBYTE_ALIGNMENT )
+//
+//static StaticTask_t blueTaskBuffer;
+//static StackType_t  blueTaskStack[STACK_SIZE];
+//#pragma DATA_SECTION(blueTaskStack,   ".freertosStaticStack")
+//#pragma DATA_ALIGN ( blueTaskStack , portBYTE_ALIGNMENT )
 
 static StaticTask_t idleTaskBuffer;
-static StackType_t  idleTaskStack[STACK_SIZE];
+static StackType_t idleTaskStack[STACK_SIZE];
 #pragma DATA_SECTION(idleTaskStack,   ".freertosStaticStack")
 #pragma DATA_ALIGN ( idleTaskStack , portBYTE_ALIGNMENT )
 
-static SemaphoreHandle_t xSemaphore = NULL;
-static StaticSemaphore_t xSemaphoreBuffer;
+//static SemaphoreHandle_t xSemaphore = NULL;
+//static StaticSemaphore_t xSemaphoreBuffer;
+static EventGroupHandle_t xSystemEventGroup = NULL;
+static StaticEventGroup_t xSystemEventGroupBuffer;
+
+static uint32_t adcReady = 0;
+static uint32_t uartReady = 0;
+static uint32_t systemReady = 0;
 
 //-------------------------------------------------------------------------------------------------
-void vApplicationStackOverflowHook( TaskHandle_t xTask, char *pcTaskName )
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
-    while(1);
+    while (1)
+        ;
 }
 
 //-------------------------------------------------------------------------------------------------
-static void blueLedToggle(void)
-{
-    static uint32_t counter = 0;
-
-    counter++;
-    GPIO_writePin(DEVICE_GPIO_PIN_LED1, counter & 1);
-}
+//static void blueLedToggle(void)
+//{
+//    static uint32_t counter = 0;
+//
+//    counter++;
+//    GPIO_writePin(DEVICE_GPIO_PIN_LED1, counter & 1);
+//}
+//
+////-------------------------------------------------------------------------------------------------
+//static void redLedToggle(void)
+//{
+//    static uint32_t counter = 0;
+//
+//    counter++;
+//    GPIO_writePin(DEVICE_GPIO_PIN_LED2, counter & 1);
+//}
 
 //-------------------------------------------------------------------------------------------------
-static void redLedToggle(void)
-{
-    static uint32_t counter = 0;
-
-    counter++;
-    GPIO_writePin(DEVICE_GPIO_PIN_LED2, counter & 1);
-}
-
-//-------------------------------------------------------------------------------------------------
-static void ledToggle(uint32_t led)
-{
-    if(RED == led)
-    {
-        redLedToggle();
-    }
-    else
-    if(BLUE == led)
-    {
-        blueLedToggle();
-    } 
-}
+//static void ledToggle(uint32_t led)
+//{
+//    if(RED == led)
+//    {
+//        redLedToggle();
+//    }
+//    else
+//    if(BLUE == led)
+//    {
+//        blueLedToggle();
+//    }
+//}
 //
 // configCPUTimer - This function initializes the selected timer to the
 // period specified by the "freq" and "period" variables. The "freq" is
 // CPU frequency in Hz and the period in uSeconds. The timer is held in
 // the stopped state after configuration.
 //
-void
-configCPUTimer(uint32_t cpuTimer, uint32_t period)
+void configCPUTimer(uint32_t cpuTimer, uint32_t period)
 {
     uint32_t temp, freq = DEVICE_SYSCLK_FREQ;
 
@@ -121,57 +148,113 @@ configCPUTimer(uint32_t cpuTimer, uint32_t period)
 }
 
 //-------------------------------------------------------------------------------------------------
-interrupt void timer1_ISR( void )
-{
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-    xSemaphoreGiveFromISR( xSemaphore, &xHigherPriorityTaskWoken );
-
-    portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
-}
-
-//-------------------------------------------------------------------------------------------------
-static void setupTimer1( void )
-{
-    Interrupt_register(INT_TIMER1, &timer1_ISR);
-
-    CPUTimer_setPeriod(CPUTIMER1_BASE, 0xFFFFFFFF);
-    CPUTimer_setPreScaler(CPUTIMER1_BASE, 0);
-    CPUTimer_stopTimer(CPUTIMER1_BASE);
-    CPUTimer_reloadTimerCounter(CPUTIMER1_BASE);
-
-    configCPUTimer(CPUTIMER1_BASE, 100000);
-
-    CPUTimer_enableInterrupt(CPUTIMER1_BASE);
-
-    Interrupt_enable(INT_TIMER1);
-    CPUTimer_startTimer(CPUTIMER1_BASE);
-}
+//interrupt void timer1_ISR( void )
+//{
+//    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//
+//    xSemaphoreGiveFromISR( xSemaphore, &xHigherPriorityTaskWoken );
+//
+//    portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+//}
 
 //-------------------------------------------------------------------------------------------------
-void LED_TaskRed(void * pvParameters)
+//static void setupTimer1( void )
+//{
+//  //  Interrupt_register(INT_TIMER1, &timer1_ISR);
+//
+//    CPUTimer_setPeriod(CPUTIMER1_BASE, 0xFFFFFFFF);
+//    CPUTimer_setPreScaler(CPUTIMER1_BASE, 0);
+//    CPUTimer_stopTimer(CPUTIMER1_BASE);
+//    CPUTimer_reloadTimerCounter(CPUTIMER1_BASE);
+//
+//    configCPUTimer(CPUTIMER1_BASE, 100000);
+//
+//    CPUTimer_enableInterrupt(CPUTIMER1_BASE);
+//
+//    Interrupt_enable(INT_TIMER1);
+//    CPUTimer_startTimer(CPUTIMER1_BASE);
+//}
+void ADCTask(void *pvParameters)
 {
-    for(;;)
+    for (;;)
     {
-        if(xSemaphoreTake( xSemaphore, portMAX_DELAY ) == pdTRUE)
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        adcReady = 1;
+
+        xEventGroupSetBits(xSystemEventGroup,
+        ADC_READY_BIT);
+
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
+}
+
+void UARTTask(void *pvParameters)
+{
+    for (;;)
+    {
+        vTaskDelay(pdMS_TO_TICKS(3000));
+
+        uartReady = 1;
+
+        xEventGroupSetBits(xSystemEventGroup,
+        UART_READY_BIT);
+
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
+}
+
+void SystemTask(void *pvParameters)
+{
+    EventBits_t events;
+
+    for (;;)
+    {
+        events = xEventGroupWaitBits(xSystemEventGroup,
+        ADC_READY_BIT | UART_READY_BIT,
+                                     pdTRUE,
+                                     pdTRUE,
+                                     portMAX_DELAY);
+
+        if ((events & (ADC_READY_BIT | UART_READY_BIT))
+                == (ADC_READY_BIT | UART_READY_BIT))
         {
-            ledToggle((uint32_t)pvParameters);
+            systemReady = 1;
+
+            GPIO_writePin(DEVICE_GPIO_PIN_LED1, 0);
+            GPIO_writePin(DEVICE_GPIO_PIN_LED2, 0);
         }
+
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }
 
 //-------------------------------------------------------------------------------------------------
-void LED_TaskBlue(void * pvParameters)
-{
-    for(;;)
-    {
-        ledToggle((uint32_t)pvParameters);
-        vTaskDelay(250 / portTICK_PERIOD_MS);
-    }
-}
+//void LED_TaskRed(void * pvParameters)
+//{
+//    for(;;)
+//    {
+//        if(xSemaphoreTake( xSemaphore, portMAX_DELAY ) == pdTRUE)
+//        {
+//            ledToggle((uint32_t)pvParameters);
+//        }
+//    }
+//}
+//
+////-------------------------------------------------------------------------------------------------
+//void LED_TaskBlue(void * pvParameters)
+//{
+//    for(;;)
+//    {
+//        ledToggle((uint32_t)pvParameters);
+//        vTaskDelay(250 / portTICK_PERIOD_MS);
+//    }
+//}
 
 //-------------------------------------------------------------------------------------------------
-void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize )
+void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
+                                   StackType_t **ppxIdleTaskStackBuffer,
+                                   uint32_t *pulIdleTaskStackSize)
 {
     *ppxIdleTaskTCBBuffer = &idleTaskBuffer;
     *ppxIdleTaskStackBuffer = idleTaskStack;
@@ -204,7 +287,6 @@ void main(void)
     // Disable CPU interrupts
     DINT;
 
-
     // Disable CPU interrupts and clear all CPU interrupt flags:
     IER = 0x0000;
     IFR = 0x0000;
@@ -215,30 +297,50 @@ void main(void)
     //
     Interrupt_initVectorTable();
 
-    xSemaphore = xSemaphoreCreateBinaryStatic( &xSemaphoreBuffer );
+//    xSemaphore = xSemaphoreCreateBinaryStatic( &xSemaphoreBuffer );
+    xSystemEventGroup = xEventGroupCreateStatic(&xSystemEventGroupBuffer);
 
-    setupTimer1();
+//    setupTimer1();
 
     // Enable global Interrupts and higher priority real-time debug events:
-    EINT;  // Enable Global interrupt INTM
-    ERTM;  // Enable Global realtime interrupt DBGM
+    EINT;
+    // Enable Global interrupt INTM
+    ERTM;
+    // Enable Global realtime interrupt DBGM
 
     // Create the task without using any dynamic memory allocation.
-    xTaskCreateStatic(LED_TaskRed,          // Function that implements the task.
-                      "Red LED task",       // Text name for the task.
-                      STACK_SIZE,           // Number of indexes in the xStack array.
-                      ( void * ) RED,       // Parameter passed into the task.
-                      tskIDLE_PRIORITY + 2, // Priority at which the task is created.
-                      redTaskStack,         // Array to use as the task's stack.
-                      &redTaskBuffer );     // Variable to hold the task's data structure.
+    xTaskCreateStatic(ADCTask, "ADC Task",
+    STACK_SIZE,
+                      NULL,
+                      tskIDLE_PRIORITY + 2,
+                      adcTaskStack, &adcTaskBuffer);
 
-    xTaskCreateStatic(LED_TaskBlue,         // Function that implements the task.
-                      "Blue LED task",      // Text name for the task.
-                      STACK_SIZE,           // Number of indexes in the xStack array.
-                      ( void * ) BLUE,      // Parameter passed into the task.
-                      tskIDLE_PRIORITY + 1, // Priority at which the task is created.
-                      blueTaskStack,        // Array to use as the task's stack.
-                      &blueTaskBuffer );    // Variable to hold the task's data structure.
+    xTaskCreateStatic(UARTTask, "UART Task",
+    STACK_SIZE,
+                      NULL,
+                      tskIDLE_PRIORITY + 2,
+                      uartTaskStack, &uartTaskBuffer);
+
+    xTaskCreateStatic(SystemTask, "System Task",
+    STACK_SIZE,
+                      NULL,
+                      tskIDLE_PRIORITY + 3,
+                      systemTaskStack, &systemTaskBuffer);
+//    xTaskCreateStatic(LED_TaskRed,          // Function that implements the task.
+//                      "Red LED task",       // Text name for the task.
+//                      STACK_SIZE,           // Number of indexes in the xStack array.
+//                      ( void * ) RED,       // Parameter passed into the task.
+//                      tskIDLE_PRIORITY + 2, // Priority at which the task is created.
+//                      redTaskStack,         // Array to use as the task's stack.
+//                      &redTaskBuffer );     // Variable to hold the task's data structure.
+//
+//    xTaskCreateStatic(LED_TaskBlue,         // Function that implements the task.
+//                      "Blue LED task",      // Text name for the task.
+//                      STACK_SIZE,           // Number of indexes in the xStack array.
+//                      ( void * ) BLUE,      // Parameter passed into the task.
+//                      tskIDLE_PRIORITY + 1, // Priority at which the task is created.
+//                      blueTaskStack,        // Array to use as the task's stack.
+//                      &blueTaskBuffer );    // Variable to hold the task's data structure.
 
     vTaskStartScheduler();
 }
