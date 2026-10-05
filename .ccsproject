@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<?ccsproject version="1.0"?>
+<projectOptions>
+	<ccsVersion value="12.1.0"/>
+	<deviceVariant value="TMS320C28XX.TMS320F2800137"/>
+	<deviceFamily value="C2000"/>
+	<deviceEndianness value="little"/>
+	<codegenToolVersion value="22.6.0.LTS"/>
+	<isElfFormat value="true"/>
+	<rts value="libc.a"/>
+	<createSlaveProjects value=""/>
+	<templateProperties value="id=freertos_ex1_c28x_led_blinky.projectspec.freertos_ex1_c28x_led_blinky"/>
+	<origin value="C:\ti\c2000\C2000Ware_5_02_00_00\kernel\FreeRTOS\Demo\C2000_F280013x_C28x_CCS\CCS\freertos_ex1_c28x_led_blinky.projectspec"/>
+	<filesToOpen value=""/>
+</projectOptions>
