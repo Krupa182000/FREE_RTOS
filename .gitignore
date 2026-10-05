@@ -1,0 +1,7 @@
+/CPU1_RAM/
+/.gitignore
+/.ccsproject
+/.cproject
+/.project
+/280013x_generic_flash_lnk.cmd
+/280013x_generic_ram_lnk.cmd
